@@ -2,6 +2,8 @@
 
 An ultra-light, no-dependency offline chatroom for the ESP8266. The device starts its own access point, hosts a captive portal, stores the latest chat messages, and serves a web UI directly from LittleFS.
 
+<img width="1802" height="1166" alt="image" src="https://github.com/user-attachments/assets/8881237d-6afd-40fe-a1f9-be7de2e3aef9" />
+
 ## About
 
 Pocket Chatroom is inspired by [leviv/pocket-wifi](https://github.com/leviv/pocket-wifi), which showed how lightweight and charming an ESP8266-hosted offline web experience can be.
