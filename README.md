@@ -1,60 +1,160 @@
-# Pocket WiFi
+# Pocket Chatroom
 
-An ultra lite no-dependency mini website for the Wemos D1 mini. Hosts articles and a zine that I like.
+An ultra-light, no-dependency offline chatroom for the ESP8266. The device starts its own access point, hosts a captive portal, stores the latest chat messages, and serves a web UI directly from LittleFS.
 
 ## About
 
-Made during [ITP Camp](https://tisch.nyu.edu/itp/camp) based on the [Iffy Books Zine](https://iffybooks.net/wp-content/uploads/zines/Iffy_Books_Pocket_Wifi_Portal_Zine_screen.pdf).
+Pocket Chatroom is inspired by [leviv/pocket-wifi](https://github.com/leviv/pocket-wifi), which showed how lightweight and charming an ESP8266-hosted offline web experience can be.
 
-[When a pigeon no longer has a home...](https://www.tiktok.com/@verbamea/photo/7315589415772949802)
-[“This Is What Our Ruling Class Has Decided Will Be Normal”](https://crimethinc.com/2024/02/26/this-is-what-our-ruling-class-has-decided-will-be-normal-on-aaron-bushnells-action-in-solidarity-with-gaza)
-[What if AI treats humans the way we treat animals?](https://www.vox.com/the-highlight/23777171/ai-animals-rights-cruelty-transhumanism-bostrom)
+This project adapts that idea into a local captive-portal chatroom with:
 
-Color scheme and dot background inspired by/stolen from [Mate Bateman](https://mattbateman.xyz/)
+- captive portal redirect via `DNSServer`
+- `POST /send` and `GET /messages` for local chat messages
+- compact client-side Unix timestamps for real date and time display
+- `POST /admin/reset` with a minimal password check
+- retention limited to the last 100 messages to protect ESP8266 resources
+- basic IP-based spam protection on `POST /send`
+- a vanilla JavaScript frontend with local username persistence
 
-## Development
+## Hardware / Software
 
-These instructions are more in depth and have pictures in the [Iffy Book zine](https://iffybooks.net/wp-content/uploads/zines/Iffy_Books_Pocket_Wifi_Portal_Zine_screen.pdf). The relevant sections are included here for reference.
+- [ESP8266 board such as a Wemos D1 mini](https://www.amazon.de/dp/B0DCBVHBB3)
+- [Arduino IDE](https://www.arduino.cc/en/software)
+- [ESP8266 board package](https://arduino.esp8266.com/stable/package_esp8266com_index.json)
+- [LittleFS upload plugin for Arduino IDE](https://github.com/earlephilhower/arduino-littlefs-upload)
 
-1. Clone the repo
+## Setup
 
-```bash
-git clone git@github.com:leviv/pocket-wifi.git
-```
+### 1. Install Arduino IDE
 
-2. Download the [Arduino 1.8.x IDE](https://www.arduino.cc/en/software)
+Download and install the Arduino IDE:
 
-3. Double click to open `pocket-wifi.ino` in the IDE.
+[Arduino IDE](https://www.arduino.cc/en/software)
 
-4. Go to File > Preferences and add this line to 'Additional Boards Manager URLs'. Hit Ok.
+---
 
-```
+### 2. Add ESP8266 board support
+
+1. Open:
+
+`Arduino IDE → Preferences… → Additional Boards Manager URLs`
+
+2. Add the following URL:
+
+```text
 https://arduino.esp8266.com/stable/package_esp8266com_index.json
 ```
 
-5. Go to Tools > Board > Boards Manager. Type `esp8266` to find the package, then click Install. Close when done.
+3. Click **OK**.
 
-6. Now go to Tools > Board > ESP8266 Boards and select LOLIN(WEMOS) D1 mini (clone).
+---
 
-7. Connect your Wemos D1 mini to your computer using a USBC cable. In the menu bar, go to Tools > Port and select /dev/cu.usbserial-XXX.
+### 3. Install the ESP8266 board package
 
-### Install SPIFFS uploader plugin
+1. Open **Boards Manager** (⌘ + ⇧ + B)
+2. Search for: `esp8266`
 
-8. Download the [latest release](https://github.com/esp8266/arduino-esp8266fs-plugin/releases) of the plugin. Unzip the file to create a directory called ESP8266FS.
+3. Install:
 
-9. Go to Arduino > Preferences and make a note of the path under "Sketchbook location." In the sketchbook directory, look for a directory called tools. If you don't see one, you can create it yourself. Move the ESP8266FS directory from your Downloads folder to the tools directory. Relaunch the IDE if needed.
-
-10. To upload files = In the menu bar, select Tools > ESP8266 Sketch Data Upload. This plugin will look for a directory called data in the project directory and upload its contents to SPIFFS storage on the ESP8266.
-
-11. Click the Upload button in the top left to compile and upload the project code to your Wemos D1 mini.
-
-## Deploy
-
-Run
-
-```bash
- chmod +x ./deploy.sh
-./deploy.sh
+```text
+esp8266 by ESP8266 Community
 ```
 
-To deploy the site to [GitHub pages](https://leviv.cool/pocket-wifi)
+---
+
+### 4. Install the LittleFS uploader plugin
+
+1. Download the latest `.vsix` release of:
+
+[arduino-littlefs-upload releases](https://github.com/earlephilhower/arduino-littlefs-upload/releases/latest)
+
+2. Create the plugin directory if it does not already exist:
+
+```bash
+mkdir -p ~/.arduinoIDE/plugins
+```
+
+3. Copy the downloaded `.vsix` file into:
+
+```text
+~/.arduinoIDE/plugins/
+```
+
+4. Then completely restart the Arduino IDE.
+
+---
+
+### 5. Clone this repository
+
+```bash
+git clone https://github.com/z-spondoms/pocket-chatroom.git
+```
+
+Open:
+
+```text
+pocket-chatroom.ino
+```
+
+in the Arduino IDE.
+
+---
+
+### 6. Select the correct board
+
+Go to:
+
+`Arduino IDE → Tools → Board → esp8266`
+
+Select:
+
+```text
+LOLIN(WEMOS) D1 R2 & mini
+```
+
+---
+
+### 7. Connect the board
+
+Connect your board to your computer with a USB cable.
+
+Then select the correct serial port:
+
+`Arduino IDE → Tools → Port → /dev/cu.usbserial-XXX`
+
+---
+
+### 8. Upload the LittleFS filesystem
+
+1. Press: **⌘ + ⇧ + P**
+
+2. Search for: `Upload LittleFS to Pico/ESP8266/ESP32`
+
+3. Run the command and wait until the upload is finished.
+
+---
+
+### 9. Upload the sketch
+
+Upload the sketch normally using the Arduino IDE upload button (arrow button).
+
+---
+
+### 10. Connect to Pocket Chatroom
+
+Connect your phone or laptop to the Wi-Fi network:
+
+```text
+Pocket Chatroom
+```
+
+The captive portal should open automatically.
+
+## Admin Reset
+
+Reset the chat log with a POST request:
+
+```bash
+curl -X POST http://192.168.4.1/admin/reset \
+  -d "password=pocket-reset"
+```
