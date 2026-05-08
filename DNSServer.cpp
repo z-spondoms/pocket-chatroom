@@ -52,6 +52,10 @@ void DNSServer::processNextRequest()
   if (_currentPacketSize)
   {
     _buffer = (unsigned char*)malloc(_currentPacketSize * sizeof(char));
+    if (_buffer == nullptr)
+    {
+      return;
+    }
     _udp.read(_buffer, _currentPacketSize);
     _dnsHeader = (DNSHeader*) _buffer;
 

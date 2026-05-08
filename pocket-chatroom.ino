@@ -9,9 +9,11 @@ const byte DNS_PORT = 53;
 const IPAddress kApIp(192, 168, 4, 1);
 const IPAddress kApMask(255, 255, 255, 0);
 const char kChatFile[] = "/chat.txt";
+const char kClientFile[] = "/clients.txt";
 const char kTempChatFile[] = "/chat.tmp";
 const char kApSsid[] = "Pocket Chatroom";
 const size_t kMaxMessages = 100;
+const size_t kClientProfileSlots = 8;
 const size_t kMaxUserLength = 24;
 const size_t kMaxMessageLength = 200;
 const unsigned long long kMinClientTimestampSec = 1700000000ULL;
@@ -37,7 +39,16 @@ struct RateLimitEntry {
   unsigned long blockedAt;
 };
 
+struct ClientProfile {
+  bool active;
+  uint8_t hostId;
+  uint32_t agentHash;
+  String user;
+  unsigned long lastSeen;
+};
+
 RateLimitEntry rateLimitEntries[kRateLimitSlots];
+ClientProfile clientProfiles[kClientProfileSlots];
 
 String ipToString(const IPAddress& ip) {
   return String(ip[0]) + "." + ip[1] + "." + ip[2] + "." + ip[3];
@@ -55,6 +66,29 @@ bool isIpAddress(const String& value) {
     }
   }
   return true;
+}
+
+uint8_t getClientHostId(const IPAddress& ip) {
+  return ip[3];
+}
+
+uint32_t hashString(const String& value) {
+  uint32_t hash = 2166136261UL;
+
+  for (size_t i = 0; i < value.length(); ++i) {
+    hash ^= static_cast<uint8_t>(value.charAt(i));
+    hash *= 16777619UL;
+  }
+
+  return hash;
+}
+
+uint32_t getClientAgentHash() {
+  return hashString(server.header("User-Agent"));
+}
+
+String getClientIdentityKey(const IPAddress& ip, const uint32_t agentHash) {
+  return String(getClientHostId(ip)) + "-" + String(agentHash);
 }
 
 String normalizeInput(String value, size_t maxLength) {
@@ -94,6 +128,50 @@ String escapeStorageField(const String& value) {
   }
 
   return escaped;
+}
+
+bool parseHostId(const String& value, uint8_t* hostId) {
+  if (!hostId || value.isEmpty()) {
+    return false;
+  }
+
+  unsigned int parsed = 0;
+  for (size_t i = 0; i < value.length(); ++i) {
+    const char current = value.charAt(i);
+    if (current < '0' || current > '9') {
+      return false;
+    }
+    parsed = (parsed * 10U) + static_cast<unsigned int>(current - '0');
+    if (parsed > 255U) {
+      return false;
+    }
+  }
+
+  *hostId = static_cast<uint8_t>(parsed);
+  return true;
+}
+
+bool parseAgentHash(const String& value, uint32_t* agentHash) {
+  if (!agentHash || value.isEmpty()) {
+    return false;
+  }
+
+  unsigned long parsed = 0;
+  for (size_t i = 0; i < value.length(); ++i) {
+    const char current = value.charAt(i);
+    if (current < '0' || current > '9') {
+      return false;
+    }
+
+    const unsigned long next = (parsed * 10UL) + static_cast<unsigned long>(current - '0');
+    if (next < parsed) {
+      return false;
+    }
+    parsed = next;
+  }
+
+  *agentHash = static_cast<uint32_t>(parsed);
+  return true;
 }
 
 String unescapeStorageField(const String& value) {
@@ -228,6 +306,141 @@ bool resetChatFile() {
 
   chatFile.close();
   return true;
+}
+
+ClientProfile* getClientProfile(const uint8_t hostId, const uint32_t agentHash, const bool createIfMissing) {
+  for (size_t i = 0; i < kClientProfileSlots; ++i) {
+    if (clientProfiles[i].active &&
+        clientProfiles[i].hostId == hostId &&
+        clientProfiles[i].agentHash == agentHash) {
+      clientProfiles[i].lastSeen = millis();
+      return &clientProfiles[i];
+    }
+  }
+
+  if (!createIfMissing) {
+    return nullptr;
+  }
+
+  for (size_t i = 0; i < kClientProfileSlots; ++i) {
+    if (!clientProfiles[i].active) {
+      clientProfiles[i].active = true;
+      clientProfiles[i].hostId = hostId;
+      clientProfiles[i].agentHash = agentHash;
+      clientProfiles[i].user = "";
+      clientProfiles[i].lastSeen = millis();
+      return &clientProfiles[i];
+    }
+  }
+
+  size_t oldestIndex = 0;
+  for (size_t i = 1; i < kClientProfileSlots; ++i) {
+    if (clientProfiles[i].lastSeen < clientProfiles[oldestIndex].lastSeen) {
+      oldestIndex = i;
+    }
+  }
+
+  clientProfiles[oldestIndex].active = true;
+  clientProfiles[oldestIndex].hostId = hostId;
+  clientProfiles[oldestIndex].agentHash = agentHash;
+  clientProfiles[oldestIndex].user = "";
+  clientProfiles[oldestIndex].lastSeen = millis();
+  return &clientProfiles[oldestIndex];
+}
+
+void saveClientProfiles() {
+  File file = LittleFS.open(kClientFile, "w");
+  if (!file) {
+    return;
+  }
+
+  for (size_t i = 0; i < kClientProfileSlots; ++i) {
+    if (!clientProfiles[i].active || clientProfiles[i].user.isEmpty()) {
+      continue;
+    }
+
+    file.println(
+      String(clientProfiles[i].hostId) + "\t" +
+      String(clientProfiles[i].agentHash) + "\t" +
+      escapeStorageField(clientProfiles[i].user)
+    );
+  }
+
+  file.close();
+}
+
+void loadClientProfiles() {
+  if (!LittleFS.exists(kClientFile)) {
+    return;
+  }
+
+  File file = LittleFS.open(kClientFile, "r");
+  if (!file) {
+    return;
+  }
+
+  while (file.available()) {
+    String line = file.readStringUntil('\n');
+    line.trim();
+    if (line.isEmpty()) {
+      continue;
+    }
+
+    const int firstTab = line.indexOf('\t');
+    const int secondTab = line.indexOf('\t', firstTab + 1);
+    if (firstTab <= 0 || secondTab <= firstTab) {
+      continue;
+    }
+
+    uint8_t hostId = 0;
+    uint32_t agentHash = 0;
+    if (!parseHostId(line.substring(0, firstTab), &hostId) ||
+        !parseAgentHash(line.substring(firstTab + 1, secondTab), &agentHash)) {
+      continue;
+    }
+
+    const String user = normalizeInput(unescapeStorageField(line.substring(secondTab + 1)), kMaxUserLength);
+    if (user.isEmpty()) {
+      continue;
+    }
+
+    ClientProfile* profile = getClientProfile(hostId, agentHash, true);
+    if (!profile) {
+      continue;
+    }
+
+    profile->user = user;
+  }
+
+  file.close();
+}
+
+String getRememberedUsername(const IPAddress& clientIp) {
+  ClientProfile* profile = getClientProfile(getClientHostId(clientIp), getClientAgentHash(), false);
+  if (!profile) {
+    return "";
+  }
+
+  return profile->user;
+}
+
+void rememberUsername(const IPAddress& clientIp, String user) {
+  user = normalizeInput(user, kMaxUserLength);
+  if (user.isEmpty()) {
+    user = "Anonymous";
+  }
+
+  ClientProfile* profile = getClientProfile(getClientHostId(clientIp), getClientAgentHash(), true);
+  if (!profile) {
+    return;
+  }
+
+  if (profile->user == user) {
+    return;
+  }
+
+  profile->user = user;
+  saveClientProfiles();
 }
 
 bool trimChatFile() {
@@ -382,7 +595,7 @@ String resolveTimestampField() {
   return rawTimestamp;
 }
 
-bool appendChatMessage(String user, String message) {
+bool appendChatMessage(const IPAddress& clientIp, String user, String message) {
   user = normalizeInput(user, kMaxUserLength);
   message = normalizeInput(message, kMaxMessageLength);
 
@@ -399,12 +612,22 @@ bool appendChatMessage(String user, String message) {
     return false;
   }
 
-  chatFile.println(resolveTimestampField() + "\t" + escapeStorageField(user) + "\t" + escapeStorageField(message));
+  chatFile.println(
+    resolveTimestampField() + "\t" + escapeStorageField(user) + "\t" +
+    getClientIdentityKey(clientIp, getClientAgentHash()) + "\t" + escapeStorageField(message)
+  );
   chatFile.close();
-  return trimChatFile();
+
+  if (!trimChatFile()) {
+    return false;
+  }
+
+  rememberUsername(clientIp, user);
+  return true;
 }
 
 void handleMessages() {
+  const String currentClientId = getClientIdentityKey(server.client().remoteIP(), getClientAgentHash());
   String payload = "[";
   bool first = true;
 
@@ -430,7 +653,17 @@ void handleMessages() {
 
       const String timestamp = line.substring(0, firstTab);
       const String user = unescapeStorageField(line.substring(firstTab + 1, secondTab));
-      const String message = unescapeStorageField(line.substring(secondTab + 1));
+      const int thirdTab = line.indexOf('\t', secondTab + 1);
+      String message;
+      bool own = false;
+
+      if (thirdTab > secondTab) {
+        const String senderId = line.substring(secondTab + 1, thirdTab);
+        message = unescapeStorageField(line.substring(thirdTab + 1));
+        own = senderId == currentClientId;
+      } else {
+        message = unescapeStorageField(line.substring(secondTab + 1));
+      }
 
       if (!first) {
         payload += ",";
@@ -443,13 +676,23 @@ void handleMessages() {
       payload += escapeJsonString(user);
       payload += "\",\"msg\":\"";
       payload += escapeJsonString(message);
-      payload += "\"}";
+      payload += "\",\"own\":";
+      payload += own ? "true" : "false";
+      payload += "}";
     }
 
     chatFile.close();
   }
 
   payload += "]";
+  server.send(200, "application/json", payload);
+}
+
+void handleMe() {
+  const String user = getRememberedUsername(server.client().remoteIP());
+  String payload = "{\"ok\":true,\"user\":\"";
+  payload += escapeJsonString(user);
+  payload += "\"}";
   server.send(200, "application/json", payload);
 }
 
@@ -473,7 +716,7 @@ void handleSend() {
     return;
   }
 
-  if (!appendChatMessage(user, message)) {
+  if (!appendChatMessage(clientIp, user, message)) {
     server.send(500, "application/json", "{\"ok\":false,\"error\":\"write-failed\"}");
     return;
   }
@@ -509,6 +752,7 @@ void handlePortalRedirect() {
 void registerRoutes() {
   server.on("/", HTTP_GET, handlePortalRoot);
   server.on("/index.html", HTTP_GET, handlePortalRoot);
+  server.on("/me", HTTP_GET, handleMe);
   server.on("/messages", HTTP_GET, handleMessages);
   server.on("/send", HTTP_POST, handleSend);
   server.on("/admin/reset", HTTP_POST, handleAdminReset);
@@ -550,8 +794,10 @@ void setup() {
     Serial.println("LittleFS mount failed.");
   } else {
     ensureChatFile();
+    loadClientProfiles();
   }
 
+  server.collectHeaders("User-Agent");
   registerRoutes();
   server.begin();
 

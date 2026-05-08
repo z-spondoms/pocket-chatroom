@@ -128,12 +128,16 @@ h1 {
 
 .messages {
   min-height: 0;
-  max-height: 54vh;
+  max-height: 55vh;
   overflow-y: auto;
   padding-right: 4px;
   display: grid;
   align-content: start;
   gap: 12px;
+}
+
+.messages:last-child {
+  margin-bottom: 4px;
 }
 
 .composer-divider {
@@ -146,31 +150,14 @@ h1 {
 
 .message {
   padding: 14px 14px 12px;
-  background: #ffffff;
+  background: #eef8ff;
   border: 2px solid var(--line);
   border-radius: var(--radius);
   box-shadow: var(--shadow-small);
 }
 
-.message:nth-child(4n + 1) {
-  background: #fffefb;
-}
-
-.message:nth-child(4n + 2) {
-  background: #fff4d8;
-}
-
-.message:nth-child(4n + 3) {
-  background: #eafff4;
-}
-
-.message:nth-child(4n + 4) {
-  background: #eef8ff;
-}
-
 .message.self {
-  outline: 3px solid var(--pink);
-  outline-offset: -3px;
+  background: #eafff4;
 }
 
 .message-header {
@@ -291,10 +278,6 @@ button:disabled {
   .chat-card {
     padding: 16px;
     box-shadow: 5px 5px 0 var(--line);
-  }
-
-  .messages {
-    max-height: 48vh;
   }
 
   .composer-footer {

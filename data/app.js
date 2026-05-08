@@ -99,6 +99,23 @@ function updateMessageCount() {
     String(elements.message.value.length) + " / " + MAX_MESSAGE_LENGTH;
 }
 
+function isDesktopKeyboardShortcutEnabled() {
+  return window.matchMedia("(hover: hover) and (pointer: fine)").matches;
+}
+
+function handleMessageKeydown(event) {
+  if (!isDesktopKeyboardShortcutEnabled()) {
+    return;
+  }
+
+  if (event.isComposing || event.key !== "Enter" || event.shiftKey) {
+    return;
+  }
+
+  event.preventDefault();
+  elements.chatForm.requestSubmit();
+}
+
 function shouldStickToBottom(container) {
   return container.scrollTop + container.clientHeight >= container.scrollHeight - 48;
 }
@@ -126,12 +143,13 @@ function renderMessages(messages) {
     const node = elements.messageTemplate.content.firstElementChild.cloneNode(true);
     const user = entry.user || "Anonymous";
     const body = entry.msg || "";
+    const isLegacyEntry = Number(entry.ts || 0) < 1000000000;
 
     node.querySelector(".message-user").textContent = user;
     node.querySelector(".message-time").textContent = formatTimestamp(entry.ts);
     node.querySelector(".message-body").textContent = body;
 
-    if (user.toLowerCase() === currentUser) {
+    if (entry.own === true || (isLegacyEntry && user.toLowerCase() === currentUser)) {
       node.classList.add("self");
     }
 
@@ -177,6 +195,32 @@ async function loadMessages() {
     setStatus("Disconnected. Retrying ...");
   } finally {
     state.loading = false;
+  }
+}
+
+async function loadProfile() {
+  try {
+    const response = await fetch("/me", {
+      cache: "no-store",
+      headers: {
+        Accept: "application/json",
+      },
+    });
+
+    if (!response.ok) {
+      return;
+    }
+
+    const profile = await response.json();
+    const rememberedUser = ((profile && profile.user) || "").trim();
+    if (!rememberedUser) {
+      return;
+    }
+
+    elements.username.value = rememberedUser;
+    saveUsername();
+  } catch (error) {
+    // Ignore profile restore failures and keep browser-side fallback values.
   }
 }
 
@@ -240,9 +284,11 @@ function bootstrap() {
   renderEmptyState();
 
   elements.username.addEventListener("input", saveUsername);
+  elements.message.addEventListener("keydown", handleMessageKeydown);
   elements.message.addEventListener("input", updateMessageCount);
   elements.chatForm.addEventListener("submit", submitMessage);
 
+  loadProfile();
   loadMessages();
   window.setInterval(loadMessages, POLL_INTERVAL_MS);
 }

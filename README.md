@@ -12,11 +12,12 @@ This project adapts that idea into a local captive-portal chatroom with:
 
 - captive portal redirect via `DNSServer`
 - `POST /send` and `GET /messages` for local chat messages
+- a vanilla JavaScript frontend with browser-side fallback username storage
 - compact client-side Unix timestamps for real date and time display
-- `POST /admin/reset` with a minimal password check
+- lightweight server-side username restore and own-message highlighting per client
 - retention limited to the last 100 messages to protect ESP8266 resources
 - basic IP-based spam protection on `POST /send`
-- a vanilla JavaScript frontend with local username persistence
+- `POST /admin/reset` with a minimal password check
 
 ## Hardware / Software
 
